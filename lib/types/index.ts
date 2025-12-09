@@ -41,7 +41,7 @@ export interface GeneratedPlan {
     whereYouAreNow: string;
     regulatoryPathway: string;
     nextThreeSteps: string[];
-    timeline: TimelineMilestone[];
+    timeline: TimelineSection;
     budgetRealityCheck: BudgetSection;
     keyRisks: Risk[];
     designFirstFocus: string[];
@@ -52,6 +52,11 @@ export interface GeneratedPlan {
 export interface TimelineMilestone {
   milestone: string;
   timeframe: string;
+}
+
+export interface TimelineSection {
+  milestones: TimelineMilestone[];
+  disclaimer: string;
 }
 
 export interface BudgetSection {
@@ -76,6 +81,7 @@ export interface CallToAction {
   headline: string;
   body: string;
   calendlyLink: string;
+  resourcesLink: string;
 }
 
 // Knowledge base types

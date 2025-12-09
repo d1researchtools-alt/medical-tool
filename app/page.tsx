@@ -1,9 +1,22 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { QUESTIONS } from '@/lib/questions';
 import { UserAnswers, GeneratedPlan } from '@/lib/types';
 import { generateSessionId, formatDate, sanitizeFilename } from '@/lib/utils';
+
+// Analytics tracking helper
+const trackEvent = async (sessionId: string, eventType: string, eventData?: Record<string, unknown>) => {
+  try {
+    await fetch('/api/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, eventType, eventData }),
+    });
+  } catch (error) {
+    console.error('Analytics tracking error:', error);
+  }
+};
 
 type AppStep = 'landing' | 'email-gate' | 'questionnaire' | 'generating' | 'results';
 
@@ -36,10 +49,18 @@ export default function MedicalDeviceIdeaPlanner() {
   const currentQuestion = QUESTIONS[currentQuestionIndex];
   const progress = Math.round(((currentQuestionIndex) / (QUESTIONS.length + 1)) * 100);
 
+  // Track page view on mount
+  useEffect(() => {
+    trackEvent(sessionId, 'page_view', { page: 'landing' });
+  }, [sessionId]);
+
   // Handle email gate submission
   const handleEmailGateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (answers.name && answers.email && answers.isPractitioner !== null) {
+      trackEvent(sessionId, 'email_gate_complete', {
+        isPractitioner: answers.isPractitioner,
+      });
       setStep('questionnaire');
     }
   };
@@ -48,6 +69,13 @@ export default function MedicalDeviceIdeaPlanner() {
   const handleQuestionAnswer = (answer: string) => {
     const key = currentQuestion.dataKey as keyof UserAnswers;
     setAnswers((prev) => ({ ...prev, [key]: answer }));
+
+    // Track question answered
+    trackEvent(sessionId, 'question_answered', {
+      questionIndex: currentQuestionIndex,
+      questionKey: currentQuestion.dataKey,
+      answer,
+    });
 
     if (currentQuestionIndex < QUESTIONS.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
@@ -102,6 +130,12 @@ export default function MedicalDeviceIdeaPlanner() {
   // Handle PDF download
   const handleDownloadPDF = async () => {
     if (!generatedPlan) return;
+
+    // Track PDF download
+    trackEvent(sessionId, 'pdf_download', {
+      deviceType: answers.deviceType,
+      stage: answers.stage,
+    });
 
     try {
       const { default: jsPDF } = await import('jspdf');
@@ -186,7 +220,7 @@ export default function MedicalDeviceIdeaPlanner() {
 
       // Section 4: Timeline
       addSectionHeader('4. Realistic Timeline');
-      generatedPlan.sections.timeline.forEach((milestone) => {
+      generatedPlan.sections.timeline.milestones.forEach((milestone) => {
         checkPageBreak(8);
         pdf.setFont('helvetica', 'bold');
         pdf.setFontSize(10);
@@ -196,7 +230,16 @@ export default function MedicalDeviceIdeaPlanner() {
         pdf.text(milestone.timeframe, margins.left + 70, currentY);
         currentY += 5;
       });
-      currentY += 3;
+      currentY += 2;
+      pdf.setFontSize(8);
+      pdf.setTextColor(128, 128, 128);
+      const timelineDisclaimerLines = pdf.splitTextToSize(generatedPlan.sections.timeline.disclaimer, contentWidth);
+      timelineDisclaimerLines.forEach((line: string) => {
+        checkPageBreak(4);
+        pdf.text(line, margins.left, currentY);
+        currentY += 4;
+      });
+      currentY += 5;
 
       // Section 5: Budget Reality Check
       addSectionHeader('5. Budget Reality Check');
@@ -554,7 +597,7 @@ export default function MedicalDeviceIdeaPlanner() {
 
                   <textarea
                     value={answers.deviceDescription}
-                    onChange={(e) => setAnswers({ ...answers, deviceDescription: e.target.value })}
+                    onChange={(e) => setAnswers({ ...answers, deviceDescription: e.target.value.slice(0, 2000) })}
                     className="w-full h-48 px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-[#ff6600] transition-colors resize-none"
                     placeholder="Describe your medical device idea in detail..."
                   />
@@ -663,14 +706,15 @@ export default function MedicalDeviceIdeaPlanner() {
               {/* Section 4: Timeline */}
               <div className="bg-white rounded-2xl p-8 shadow-lg mb-6">
                 <h2 className="section-header">4. Realistic Timeline</h2>
-                <div className="space-y-3">
-                  {generatedPlan.sections.timeline.map((milestone, index) => (
+                <div className="space-y-3 mb-6">
+                  {generatedPlan.sections.timeline.milestones.map((milestone, index) => (
                     <div key={index} className="flex justify-between items-center py-3 border-b border-gray-100 last:border-0">
                       <span className="font-medium text-gray-900">{milestone.milestone}</span>
                       <span className="text-[#ff6600] font-semibold">{milestone.timeframe}</span>
                     </div>
                   ))}
                 </div>
+                <p className="text-sm text-gray-500 italic">{generatedPlan.sections.timeline.disclaimer}</p>
               </div>
 
               {/* Section 5: Budget Reality Check */}
@@ -748,14 +792,37 @@ export default function MedicalDeviceIdeaPlanner() {
                 <p className="text-gray-600 mb-6">{generatedPlan.sections.callToAction.body}</p>
 
                 <div className="flex flex-wrap gap-4">
-                  {generatedPlan.sections.callToAction.showBookingButton && (
+                  {generatedPlan.sections.callToAction.showBookingButton ? (
                     <a
                       href={generatedPlan.sections.callToAction.calendlyLink}
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={() => {
+                        trackEvent(sessionId, 'calendly_click', {
+                          deviceType: answers.deviceType,
+                          stage: answers.stage,
+                          budgetExpectation: answers.budgetExpectation,
+                        });
+                      }}
                       className="px-6 py-3 bg-[#ff6600] hover:bg-[#d95000] text-white font-semibold rounded-xl transition-all"
                     >
                       Book Free Project Review
+                    </a>
+                  ) : (
+                    <a
+                      href={generatedPlan.sections.callToAction.resourcesLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => {
+                        trackEvent(sessionId, 'resources_click', {
+                          deviceType: answers.deviceType,
+                          stage: answers.stage,
+                          budgetExpectation: answers.budgetExpectation,
+                        });
+                      }}
+                      className="px-6 py-3 bg-[#ff6600] hover:bg-[#d95000] text-white font-semibold rounded-xl transition-all"
+                    >
+                      Explore Our Resources
                     </a>
                   )}
                   <button

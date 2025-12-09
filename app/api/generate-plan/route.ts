@@ -7,11 +7,12 @@ import {
   DESIGN_1ST_POSITIONING,
   STAGE_CONTENT,
 } from '@/lib/knowledge-base';
+import { sql } from '@/lib/db';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { answers } = body as { answers: UserAnswers };
+    const { answers, sessionId } = body as { answers: UserAnswers; sessionId?: string };
 
     // Validate required fields
     if (!answers || !answers.deviceDescription) {
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 4000,
         messages: [
           {
@@ -71,7 +72,74 @@ export async function POST(request: NextRequest) {
     // Parse the structured response
     const plan = parseClaudeResponse(planContent, answers);
 
-    return NextResponse.json({ plan });
+    // Save submission and plan to database
+    let submissionId: number | null = null;
+    try {
+      // Calculate lead score based on budget + stage + practitioner (Section 6.4)
+      const leadScore = calculateLeadScore(answers);
+      const isQualifiedLead = plan.sections.callToAction.showBookingButton;
+
+      // Generate CRM tags
+      const crmTags = [
+        answers.isPractitioner ? 'practitioner' : 'non-practitioner',
+        answers.deviceType,
+        answers.stage,
+        answers.budgetExpectation,
+      ].filter(Boolean);
+
+      // 90-day expiry for device description (Section 6.1)
+      const descriptionExpiresAt = new Date();
+      descriptionExpiresAt.setDate(descriptionExpiresAt.getDate() + 90);
+
+      // Insert submission
+      const submissionResult = await sql`
+        INSERT INTO submissions (
+          session_id, name, email, is_practitioner,
+          stage, device_type, complexity, ip_status,
+          time_commitment, budget_expectation, end_goal,
+          biggest_concern, employer_type, coinventors,
+          target_markets, device_description,
+          is_qualified_lead, lead_score, crm_tags, description_expires_at
+        ) VALUES (
+          ${sessionId || null}, ${answers.name}, ${answers.email}, ${answers.isPractitioner},
+          ${answers.stage}, ${answers.deviceType}, ${answers.complexity}, ${answers.ipStatus},
+          ${answers.timeCommitment}, ${answers.budgetExpectation}, ${answers.endGoal},
+          ${answers.biggestConcern}, ${answers.employerType}, ${answers.coinventors},
+          ${answers.targetMarkets}, ${answers.deviceDescription},
+          ${isQualifiedLead}, ${leadScore}, ${crmTags}, ${descriptionExpiresAt.toISOString()}
+        )
+        RETURNING id
+      `;
+
+      submissionId = submissionResult[0]?.id;
+
+      // Insert plan
+      if (submissionId) {
+        await sql`
+          INSERT INTO plans (submission_id, plan_json)
+          VALUES (${submissionId}, ${JSON.stringify(plan)})
+        `;
+      }
+
+      // Track plan generation event
+      await sql`
+        INSERT INTO analytics_events (session_id, event_type, event_data)
+        VALUES (${sessionId || null}, 'plan_generated', ${JSON.stringify({
+          submissionId,
+          isQualifiedLead,
+          deviceType: answers.deviceType,
+          stage: answers.stage,
+          budgetExpectation: answers.budgetExpectation,
+        })})
+      `;
+
+      console.log('Saved submission:', submissionId);
+    } catch (dbError) {
+      // Log but don't fail the request if database save fails
+      console.error('Database save error:', dbError);
+    }
+
+    return NextResponse.json({ plan, submissionId });
   } catch (error) {
     console.error('Plan generation error:', error);
     return NextResponse.json(
@@ -168,6 +236,48 @@ interface ClaudePlanResponse {
   isQualifiedLead: boolean;
 }
 
+// Calculate lead score based on budget + stage + practitioner (Section 6.4)
+function calculateLeadScore(answers: UserAnswers): number {
+  let score = 0;
+
+  // Budget score (0-40 points)
+  const budgetScores: Record<string, number> = {
+    '$500,000+': 40,
+    '$300,000 - $500,000': 35,
+    '$150,000 - $300,000': 30,
+    '$50,000 - $150,000': 20,
+    'I have no idea': 15, // Still shows interest
+    'Less than $50,000': 5,
+  };
+  score += budgetScores[answers.budgetExpectation] || 0;
+
+  // Stage score (0-30 points) - more advanced = higher score
+  const stageScores: Record<string, number> = {
+    'Already using informally in my practice': 30,
+    'Working prototype': 25,
+    'Basic prototype (non-functional or rough)': 20,
+    'Detailed drawings or CAD models': 15,
+    'Napkin sketch / concept only': 10,
+  };
+  score += stageScores[answers.stage] || 0;
+
+  // Practitioner bonus (0-20 points)
+  if (answers.isPractitioner) {
+    score += 20;
+  }
+
+  // Time commitment bonus (0-10 points)
+  const timeScores: Record<string, number> = {
+    '10+ hours': 10,
+    '5-10 hours': 8,
+    '2-5 hours': 5,
+    'Less than 2 hours': 2,
+  };
+  score += timeScores[answers.timeCommitment] || 0;
+
+  return score;
+}
+
 function parseClaudeResponse(content: string, answers: UserAnswers) {
   try {
     // Try to extract JSON from the response
@@ -193,7 +303,10 @@ function parseClaudeResponse(content: string, answers: UserAnswers) {
         whereYouAreNow: parsed.whereYouAreNow,
         regulatoryPathway: parsed.regulatoryPathway,
         nextThreeSteps: parsed.nextThreeSteps,
-        timeline: parsed.timeline,
+        timeline: {
+          milestones: parsed.timeline,
+          disclaimer: 'These timelines assume no major design pivots, regulatory delays, or funding gaps. Actual duration varies based on technical complexity and market factors.',
+        },
         budgetRealityCheck: {
           expectationComparison: parsed.budgetComparison,
           breakdown: parsed.budgetBreakdown,
@@ -210,7 +323,8 @@ function parseClaudeResponse(content: string, answers: UserAnswers) {
           body: parsed.isQualifiedLead
             ? "Our senior technical team reviews early-stage device concepts at no cost. We'll tell you what we see - including whether now is the right time to move forward."
             : 'Learn more about medical device development with our educational resources and case studies.',
-          calendlyLink: 'https://calendly.com/design1st/consultation', // Placeholder
+          calendlyLink: 'https://calendly.com/design1st?utm_source=AI-Public-Footer&utm_medium=Knowledge-Hub&utm_campaign=calendly-link',
+          resourcesLink: 'https://design1st.com/blog/',
         },
       },
       userInfo: {
