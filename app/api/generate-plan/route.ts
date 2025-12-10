@@ -114,12 +114,10 @@ export async function POST(request: NextRequest) {
       submissionId = submissionResult[0]?.id;
 
       // Insert plan
-      if (submissionId) {
-        await sql`
-          INSERT INTO plans (submission_id, plan_json)
-          VALUES (${submissionId}, ${JSON.stringify(plan)})
-        `;
-      }
+      await sql`
+        INSERT INTO plans (session_id, plan_json)
+        VALUES (${sessionId || null}, ${JSON.stringify(plan)})
+      `;
 
       // Track plan generation event
       await sql`

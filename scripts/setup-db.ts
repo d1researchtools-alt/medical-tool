@@ -82,12 +82,18 @@ async function setupDatabase() {
     await sql`
       CREATE TABLE IF NOT EXISTS plans (
         id SERIAL PRIMARY KEY,
-        submission_id INTEGER REFERENCES submissions(id),
+        session_id VARCHAR(255),
         plan_json JSONB NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `;
     console.log('✓ Created plans table');
+
+    // Create index on session_id for plans table
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_plans_session ON plans(session_id)
+    `;
+    console.log('✓ Created plans session_id index');
 
     // Create index on email for faster lookups
     await sql`

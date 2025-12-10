@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
+import ReactMarkdown from 'react-markdown';
 import { QUESTIONS } from '@/lib/questions';
 import { UserAnswers, GeneratedPlan } from '@/lib/types';
 import { generateSessionId, formatDate, sanitizeFilename } from '@/lib/utils';
@@ -157,11 +158,25 @@ export default function MedicalDeviceIdeaPlanner() {
         return false;
       };
 
+      // Helper to strip markdown formatting
+      const stripMarkdown = (text: string): string => {
+        return text
+          .replace(/\*\*([^*]+)\*\*/g, '$1')  // **bold**
+          .replace(/\*([^*]+)\*/g, '$1')       // *italic*
+          .replace(/__([^_]+)__/g, '$1')       // __bold__
+          .replace(/_([^_]+)_/g, '$1')         // _italic_
+          .replace(/^#+\s*/gm, '')             // # headers
+          .replace(/^[-*]\s+/gm, '• ')         // - or * bullets to •
+          .replace(/^\d+\.\s+/gm, (match) => match) // keep numbered lists
+          .trim();
+      };
+
       const addText = (text: string, fontSize: number, style: 'normal' | 'bold' = 'normal', color: number[] = [0, 0, 0]) => {
         pdf.setFont('helvetica', style);
         pdf.setFontSize(fontSize);
         pdf.setTextColor(color[0], color[1], color[2]);
-        const lines = pdf.splitTextToSize(text, contentWidth);
+        const cleanText = stripMarkdown(text);
+        const lines = pdf.splitTextToSize(cleanText, contentWidth);
         const lineHeight = fontSize * 0.45;
         checkPageBreak(lines.length * lineHeight);
         lines.forEach((line: string) => {
@@ -227,10 +242,22 @@ export default function MedicalDeviceIdeaPlanner() {
         pdf.setFont('helvetica', 'bold');
         pdf.setFontSize(10);
         pdf.setTextColor(0, 0, 0);
-        pdf.text(`${milestone.milestone}:`, margins.left, currentY);
+        // Use dot leaders between milestone and timeframe, right-align the timeframe
+        const milestoneText = milestone.milestone;
+        const timeframeText = milestone.timeframe;
+        const milestoneWidth = pdf.getTextWidth(milestoneText);
         pdf.setFont('helvetica', 'normal');
-        pdf.text(milestone.timeframe, margins.left + 70, currentY);
-        currentY += 5;
+        const timeframeWidth = pdf.getTextWidth(timeframeText);
+        const availableWidth = contentWidth - 10;
+        const dotsWidth = availableWidth - milestoneWidth - timeframeWidth - 4;
+        const dotCount = Math.max(3, Math.floor(dotsWidth / pdf.getTextWidth('.')));
+        const dots = '.'.repeat(dotCount);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(milestoneText, margins.left + 5, currentY);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(dots, margins.left + 5 + milestoneWidth + 2, currentY);
+        pdf.text(timeframeText, margins.left + availableWidth - timeframeWidth + 5, currentY);
+        currentY += 6;
       });
       currentY += 2;
       pdf.setFontSize(8);
@@ -254,9 +281,19 @@ export default function MedicalDeviceIdeaPlanner() {
         pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(10);
         pdf.setTextColor(0, 0, 0);
-        pdf.text(`${item.category}:`, margins.left + 5, currentY);
-        pdf.text(item.range, margins.left + 80, currentY);
-        currentY += 5;
+        // Use dot leaders between category and range, right-align the range
+        const categoryText = `${item.category}`;
+        const rangeText = item.range;
+        const categoryWidth = pdf.getTextWidth(categoryText);
+        const rangeWidth = pdf.getTextWidth(rangeText);
+        const availableWidth = contentWidth - 10; // 5px padding on each side
+        const dotsWidth = availableWidth - categoryWidth - rangeWidth - 4;
+        const dotCount = Math.max(3, Math.floor(dotsWidth / pdf.getTextWidth('.')));
+        const dots = '.'.repeat(dotCount);
+        pdf.text(categoryText, margins.left + 5, currentY);
+        pdf.text(dots, margins.left + 5 + categoryWidth + 2, currentY);
+        pdf.text(rangeText, margins.left + availableWidth - rangeWidth + 5, currentY);
+        currentY += 6;
       });
       currentY += 2;
       pdf.setFontSize(8);
@@ -286,7 +323,7 @@ export default function MedicalDeviceIdeaPlanner() {
         currentY += 5;
         pdf.setFont('helvetica', 'normal');
         pdf.setTextColor(0, 0, 0);
-        const riskLines = pdf.splitTextToSize(risk.description, contentWidth - 5);
+        const riskLines = pdf.splitTextToSize(stripMarkdown(risk.description), contentWidth - 5);
         riskLines.forEach((line: string) => {
           pdf.text(line, margins.left + 5, currentY);
           currentY += 4;
@@ -475,7 +512,9 @@ export default function MedicalDeviceIdeaPlanner() {
 
                 <form onSubmit={handleEmailGateSubmit} className="space-y-5">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Your Name</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Name <span className="text-red-500">*</span>
+                    </label>
                     <input
                       type="text"
                       value={answers.name}
@@ -487,20 +526,27 @@ export default function MedicalDeviceIdeaPlanner() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Email Address <span className="text-red-500">*</span>
+                    </label>
                     <input
                       type="email"
                       value={answers.email}
                       onChange={(e) => setAnswers({ ...answers, email: e.target.value })}
                       className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-[#ff6600] transition-colors"
                       placeholder="you@example.com"
+                      pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$"
+                      title="Please enter a valid email address"
                       required
                     />
+                    <p className="mt-2 text-xs text-gray-500">
+                      Your email is used solely to deliver your personalized development plan. We respect your privacy and will not share your information or send unsolicited communications.
+                    </p>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-3">
-                      Are you a practicing physician, dentist, or veterinarian?
+                      Are you a practicing physician, dentist, or veterinarian? <span className="text-red-500">*</span>
                     </label>
                     <div className="flex gap-4">
                       <button
@@ -541,7 +587,7 @@ export default function MedicalDeviceIdeaPlanner() {
                   onClick={() => setStep('landing')}
                   className="mt-4 w-full text-sm text-gray-500 hover:text-gray-700"
                 >
-                  ← Back
+                  Back
                 </button>
               </div>
             </div>
@@ -633,11 +679,12 @@ export default function MedicalDeviceIdeaPlanner() {
                   />
 
                   <div className="flex justify-between items-center mt-2 mb-4">
-                    <span className={`text-sm ${answers.deviceDescription.length < 200 ? 'text-red-500' : 'text-green-600'}`}>
-                      {answers.deviceDescription.length} / 200 minimum characters
-                      {answers.deviceDescription.length >= 200 && ' ✓'}
-                    </span>
-                    <span className="text-sm text-gray-500">
+                    {answers.deviceDescription.length < 200 && (
+                      <span className="text-sm text-red-500">
+                        {answers.deviceDescription.length} / 200 minimum characters
+                      </span>
+                    )}
+                    <span className="text-sm text-gray-500 ml-auto">
                       {answers.deviceDescription.length} / 2000 max
                     </span>
                   </div>
@@ -709,13 +756,17 @@ export default function MedicalDeviceIdeaPlanner() {
               {/* Section 1: Where You Are Now */}
               <div className="bg-white rounded-2xl p-8 shadow-lg mb-6">
                 <h2 className="section-header">1. Where You Are Now</h2>
-                <p className="text-gray-700 whitespace-pre-line">{generatedPlan.sections.whereYouAreNow}</p>
+                <div className="text-gray-700 prose prose-gray max-w-none">
+                  <ReactMarkdown>{generatedPlan.sections.whereYouAreNow}</ReactMarkdown>
+                </div>
               </div>
 
               {/* Section 2: Regulatory Pathway */}
               <div className="bg-white rounded-2xl p-8 shadow-lg mb-6">
                 <h2 className="section-header">2. Your Likely Regulatory Pathway</h2>
-                <p className="text-gray-700 whitespace-pre-line">{generatedPlan.sections.regulatoryPathway}</p>
+                <div className="text-gray-700 prose prose-gray max-w-none">
+                  <ReactMarkdown>{generatedPlan.sections.regulatoryPathway}</ReactMarkdown>
+                </div>
               </div>
 
               {/* Section 3: Next 3 Steps */}
@@ -727,7 +778,9 @@ export default function MedicalDeviceIdeaPlanner() {
                       <div className="flex-shrink-0 w-8 h-8 bg-[#ff6600] text-white rounded-full flex items-center justify-center font-bold">
                         {index + 1}
                       </div>
-                      <p className="text-gray-700 pt-1">{step}</p>
+                      <div className="text-gray-700 pt-1 prose prose-gray max-w-none">
+                        <ReactMarkdown>{step}</ReactMarkdown>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -750,7 +803,9 @@ export default function MedicalDeviceIdeaPlanner() {
               {/* Section 5: Budget Reality Check */}
               <div className="bg-white rounded-2xl p-8 shadow-lg mb-6">
                 <h2 className="section-header">5. Budget Reality Check</h2>
-                <p className="text-gray-700 mb-6">{generatedPlan.sections.budgetRealityCheck.expectationComparison}</p>
+                <div className="text-gray-700 mb-6 prose prose-gray max-w-none">
+                  <ReactMarkdown>{generatedPlan.sections.budgetRealityCheck.expectationComparison}</ReactMarkdown>
+                </div>
 
                 <h3 className="font-semibold text-gray-900 mb-4">Budget Breakdown</h3>
                 <div className="space-y-2 mb-6">
@@ -784,7 +839,9 @@ export default function MedicalDeviceIdeaPlanner() {
                         <span className="font-bold">[{risk.severity}]</span>
                         <span className="font-semibold">{risk.title}</span>
                       </div>
-                      <p className="text-sm">{risk.description}</p>
+                      <div className="text-sm prose prose-gray max-w-none">
+                        <ReactMarkdown>{risk.description}</ReactMarkdown>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -802,7 +859,9 @@ export default function MedicalDeviceIdeaPlanner() {
                       <svg className="w-5 h-5 text-[#ff6600] flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                       </svg>
-                      <p className="text-gray-700">{focus}</p>
+                      <div className="text-gray-700 prose prose-gray max-w-none">
+                        <ReactMarkdown>{focus}</ReactMarkdown>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -834,7 +893,7 @@ export default function MedicalDeviceIdeaPlanner() {
                           budgetExpectation: answers.budgetExpectation,
                         });
                       }}
-                      className="px-6 py-3 bg-[#ff6600] hover:bg-[#d95000] text-white font-semibold rounded-xl transition-all"
+                      className="px-6 py-3 bg-[#ff6600] hover:bg-[#d95000] text-white font-semibold rounded-xl transition-all inline-flex items-center justify-center"
                     >
                       Book Free Project Review
                     </a>
@@ -850,14 +909,14 @@ export default function MedicalDeviceIdeaPlanner() {
                           budgetExpectation: answers.budgetExpectation,
                         });
                       }}
-                      className="px-6 py-3 bg-[#ff6600] hover:bg-[#d95000] text-white font-semibold rounded-xl transition-all"
+                      className="px-6 py-3 bg-[#ff6600] hover:bg-[#d95000] text-white font-semibold rounded-xl transition-all inline-flex items-center justify-center"
                     >
                       Explore Our Resources
                     </a>
                   )}
                   <button
                     onClick={handleDownloadPDF}
-                    className="px-6 py-3 bg-white border-2 border-gray-300 hover:border-[#ff6600] text-gray-700 font-semibold rounded-xl transition-all"
+                    className="px-6 py-3 bg-white border-2 border-gray-300 hover:border-[#ff6600] text-gray-700 font-semibold rounded-xl transition-all inline-flex items-center justify-center"
                   >
                     Download Your Plan (PDF)
                   </button>
