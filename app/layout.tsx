@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: 'Medical Device Idea Planner | Design 1st',
   description:
-    'AI-powered tool that generates personalized development plans for physician and dentist inventors with medical device ideas.',
+    'Expert-driven tool that generates personalized development plans for physician and dentist inventors with medical device ideas.',
   keywords: [
     'medical device',
     'FDA',

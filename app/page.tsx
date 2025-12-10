@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import Image from 'next/image';
 import { QUESTIONS } from '@/lib/questions';
 import { UserAnswers, GeneratedPlan } from '@/lib/types';
 import { generateSessionId, formatDate, sanitizeFilename } from '@/lib/utils';
+import Footer from './components/Footer';
 
 // Analytics tracking helper
 const trackEvent = async (sessionId: string, eventType: string, eventData?: Record<string, unknown>) => {
@@ -355,19 +357,47 @@ export default function MedicalDeviceIdeaPlanner() {
     <div className="min-h-screen flex flex-col bg-gray-50">
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-[#54565a]">
-        <div className="px-4 md:px-6 lg:px-8 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <span className="text-white font-bold text-lg">Design 1st</span>
-            <span className="hidden md:block text-gray-300 text-sm">Medical Device Idea Planner</span>
+        <div className="px-3 sm:px-4 md:px-6 lg:px-[20px] py-1 sm:py-1.5 md:py-2 lg:py-3 flex items-center justify-between">
+          {/* Logo */}
+          <div className="flex-shrink-0 md:ml-4">
+            <div className="w-28 sm:w-36 md:w-40 lg:w-44 xl:w-48 h-8 sm:h-10 md:h-11 lg:h-12 relative">
+              <Image
+                src="/New_Logo_Dark.svg"
+                alt="Design1st Logo"
+                fill
+                className="object-contain"
+                priority
+              />
+            </div>
           </div>
-          {step !== 'landing' && (
-            <button
-              onClick={handleRestart}
-              className="px-4 py-2 rounded-lg font-medium text-sm bg-[#ff6600] hover:bg-[#d95000] text-white transition-colors"
+
+          {/* Contact Information - Right side */}
+          <div className="flex items-center gap-3 sm:gap-4 md:gap-6 md:mr-4">
+            <a
+              href="tel:1-877-235-1004"
+              className="flex items-center gap-2 text-white hover:text-[#ff6600] transition-colors"
             >
-              Start Over
-            </button>
-          )}
+              <Image src="/header-phone-white.svg" alt="Phone" width={16} height={16} />
+              <span className="hidden md:inline text-[14px] lg:text-[16px] whitespace-nowrap">1-877-235-1004</span>
+            </a>
+
+            <a
+              href="mailto:info@design1st.com"
+              className="flex items-center gap-2 text-white hover:text-[#ff6600] transition-colors"
+            >
+              <Image src="/header-email-white.svg" alt="Email" width={16} height={16} />
+              <span className="hidden md:inline text-[14px] lg:text-[16px] whitespace-nowrap">info@design1st.com</span>
+            </a>
+
+            {step !== 'landing' && (
+              <button
+                onClick={handleRestart}
+                className="px-4 py-2 rounded-lg font-medium text-sm bg-[#ff6600] hover:bg-[#d95000] text-white transition-colors"
+              >
+                Start Over
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
@@ -408,7 +438,7 @@ export default function MedicalDeviceIdeaPlanner() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                   </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">AI-Powered Analysis</h3>
+                  <h3 className="font-semibold text-gray-900 mb-2">Expert-Driven Analysis</h3>
                   <p className="text-sm text-gray-600">Get personalized insights based on 16+ years of medical device development experience.</p>
                 </div>
 
@@ -839,16 +869,7 @@ export default function MedicalDeviceIdeaPlanner() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-[#54565a] text-white py-6">
-        <div className="max-w-4xl mx-auto px-4 text-center">
-          <p className="text-sm text-gray-300">
-            Powered by Design 1st | 16+ years, 1200+ products, 25+ physician inventors
-          </p>
-          <p className="text-xs text-gray-400 mt-2">
-            This tool provides preliminary guidance only. Consult with legal and regulatory professionals before making business decisions.
-          </p>
-        </div>
-      </footer>
+      <Footer positioning="relative" />
     </div>
   );
 }
