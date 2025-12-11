@@ -99,8 +99,8 @@ export default function MedicalDeviceIdeaPlanner() {
 
   // Handle device description submission
   const handleDeviceDescriptionSubmit = async () => {
-    if (answers.deviceDescription.length < 200) {
-      setError('Please provide at least 200 characters describing your device.');
+    if (answers.deviceDescription.length < 100) {
+      setError('Please provide at least 100 characters describing your device.');
       return;
     }
 
@@ -679,9 +679,9 @@ export default function MedicalDeviceIdeaPlanner() {
                   />
 
                   <div className="flex justify-between items-center mt-2 mb-4">
-                    {answers.deviceDescription.length < 200 && (
+                    {answers.deviceDescription.length < 100 && (
                       <span className="text-sm text-red-500">
-                        {answers.deviceDescription.length} / 200 minimum characters
+                        {answers.deviceDescription.length} / 100 minimum characters
                       </span>
                     )}
                     <span className="text-sm text-gray-500 ml-auto">
@@ -697,7 +697,7 @@ export default function MedicalDeviceIdeaPlanner() {
 
                   <button
                     onClick={handleDeviceDescriptionSubmit}
-                    disabled={answers.deviceDescription.length < 200}
+                    disabled={answers.deviceDescription.length < 100}
                     className="w-full py-4 bg-[#ff6600] hover:bg-[#d95000] disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all"
                   >
                     Generate My Development Plan
