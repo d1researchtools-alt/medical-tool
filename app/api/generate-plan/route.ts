@@ -91,17 +91,17 @@ export async function POST(request: NextRequest) {
       const descriptionExpiresAt = new Date();
       descriptionExpiresAt.setDate(descriptionExpiresAt.getDate() + 90);
 
-      // Insert submission
+      // Insert submission (email collected separately at end of flow)
       const submissionResult = await sql`
         INSERT INTO submissions (
-          session_id, name, email, is_practitioner,
+          session_id, name, is_practitioner,
           stage, device_type, complexity, ip_status,
           time_commitment, budget_expectation, end_goal,
           biggest_concern, employer_type, coinventors,
           target_markets, device_description,
           is_qualified_lead, lead_score, crm_tags, description_expires_at
         ) VALUES (
-          ${sessionId || null}, ${answers.name}, ${answers.email}, ${answers.isPractitioner},
+          ${sessionId || null}, ${answers.name || null}, ${answers.isPractitioner},
           ${answers.stage}, ${answers.deviceType}, ${answers.complexity}, ${answers.ipStatus},
           ${answers.timeCommitment}, ${answers.budgetExpectation}, ${answers.endGoal},
           ${answers.biggestConcern}, ${answers.employerType}, ${answers.coinventors},
@@ -197,8 +197,7 @@ function buildUserPrompt(answers: UserAnswers): string {
   return `Generate a personalized medical device development plan based on these inputs:
 
 USER PROFILE:
-- Name: ${answers.name}
-- Email: ${answers.email}
+- Name: ${answers.name || 'Not provided'}
 - Is Practitioner: ${answers.isPractitioner ? 'Yes' : 'No'}
 
 DEVICE & SITUATION:

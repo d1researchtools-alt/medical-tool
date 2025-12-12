@@ -21,7 +21,7 @@ const trackEvent = async (sessionId: string, eventType: string, eventData?: Reco
   }
 };
 
-type AppStep = 'landing' | 'email-gate' | 'questionnaire' | 'generating' | 'results';
+type AppStep = 'landing' | 'questionnaire' | 'generating' | 'results';
 
 const initialAnswers: UserAnswers = {
   name: '',
@@ -48,6 +48,8 @@ export default function MedicalDeviceIdeaPlanner() {
   const [generatedPlan, setGeneratedPlan] = useState<GeneratedPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sessionId] = useState(() => generateSessionId());
+  const [emailSent, setEmailSent] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   const currentQuestion = QUESTIONS[currentQuestionIndex];
   const progress = Math.round(((currentQuestionIndex) / (QUESTIONS.length + 1)) * 100);
@@ -56,17 +58,6 @@ export default function MedicalDeviceIdeaPlanner() {
   useEffect(() => {
     trackEvent(sessionId, 'page_view', { page: 'landing' });
   }, [sessionId]);
-
-  // Handle email gate submission
-  const handleEmailGateSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (answers.name && answers.email && answers.isPractitioner !== null) {
-      trackEvent(sessionId, 'email_gate_complete', {
-        isPractitioner: answers.isPractitioner,
-      });
-      setStep('questionnaire');
-    }
-  };
 
   // Handle question answer
   const handleQuestionAnswer = (answer: string) => {
@@ -93,7 +84,7 @@ export default function MedicalDeviceIdeaPlanner() {
     if (currentQuestionIndex > 0) {
       setCurrentQuestionIndex(currentQuestionIndex - 1);
     } else {
-      setStep('email-gate');
+      setStep('landing');
     }
   };
 
@@ -388,6 +379,39 @@ export default function MedicalDeviceIdeaPlanner() {
     setCurrentQuestionIndex(0);
     setGeneratedPlan(null);
     setError(null);
+    setEmailSent(false);
+    setSendingEmail(false);
+  };
+
+  // Handle saving email to database
+  const handleSendEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!answers.email || !generatedPlan) return;
+
+    setSendingEmail(true);
+    try {
+      // Save email to database
+      const response = await fetch('/api/save-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, email: answers.email }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save email');
+      }
+
+      trackEvent(sessionId, 'email_submitted', {
+        deviceType: answers.deviceType,
+        stage: answers.stage,
+      });
+      setEmailSent(true);
+    } catch (err) {
+      console.error('Error saving email:', err);
+      setError('Failed to save email. Please try again.');
+    } finally {
+      setSendingEmail(false);
+    }
   };
 
   return (
@@ -491,7 +515,7 @@ export default function MedicalDeviceIdeaPlanner() {
               </div>
 
               <button
-                onClick={() => setStep('email-gate')}
+                onClick={() => setStep('questionnaire')}
                 className="px-8 py-4 bg-[#ff6600] hover:bg-[#d95000] text-white font-semibold rounded-xl text-lg transition-all shadow-lg hover:shadow-xl"
               >
                 Get Your Free Development Plan
@@ -500,96 +524,6 @@ export default function MedicalDeviceIdeaPlanner() {
               <p className="mt-6 text-sm text-gray-500">
                 Takes about 5-10 minutes to complete
               </p>
-            </div>
-          )}
-
-          {/* Email Gate */}
-          {step === 'email-gate' && (
-            <div className="max-w-md mx-auto py-12 animate-fadeIn">
-              <div className="bg-white rounded-2xl p-8 shadow-lg">
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">Let&apos;s get started</h2>
-                <p className="text-gray-600 mb-6">We&apos;ll use this information to personalize your development plan.</p>
-
-                <form onSubmit={handleEmailGateSubmit} className="space-y-5">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Name <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={answers.name}
-                      onChange={(e) => setAnswers({ ...answers, name: e.target.value })}
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-[#ff6600] transition-colors"
-                      placeholder="First and Last Name"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Email Address <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      value={answers.email}
-                      onChange={(e) => setAnswers({ ...answers, email: e.target.value })}
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-[#ff6600] transition-colors"
-                      placeholder="you@example.com"
-                      pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$"
-                      title="Please enter a valid email address"
-                      required
-                    />
-                    <p className="mt-2 text-xs text-gray-500">
-                      Your email is used solely to deliver your personalized development plan. We respect your privacy and will not share your information or send unsolicited communications.
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-3">
-                      Are you a practicing physician, dentist, or veterinarian? <span className="text-red-500">*</span>
-                    </label>
-                    <div className="flex gap-4">
-                      <button
-                        type="button"
-                        onClick={() => setAnswers({ ...answers, isPractitioner: true })}
-                        className={`flex-1 py-3 px-4 rounded-xl border-2 font-medium transition-all ${
-                          answers.isPractitioner === true
-                            ? 'bg-[#ff6600] border-[#ff6600] text-white'
-                            : 'bg-white border-gray-300 text-gray-700 hover:border-[#ff6600]'
-                        }`}
-                      >
-                        Yes
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setAnswers({ ...answers, isPractitioner: false })}
-                        className={`flex-1 py-3 px-4 rounded-xl border-2 font-medium transition-all ${
-                          answers.isPractitioner === false
-                            ? 'bg-[#ff6600] border-[#ff6600] text-white'
-                            : 'bg-white border-gray-300 text-gray-700 hover:border-[#ff6600]'
-                        }`}
-                      >
-                        No
-                      </button>
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={!answers.name || !answers.email || answers.isPractitioner === null}
-                    className="w-full py-4 bg-[#ff6600] hover:bg-[#d95000] disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all"
-                  >
-                    Continue to Questions
-                  </button>
-                </form>
-
-                <button
-                  onClick={() => setStep('landing')}
-                  className="mt-4 w-full text-sm text-gray-500 hover:text-gray-700"
-                >
-                  Back
-                </button>
-              </div>
             </div>
           )}
 
@@ -675,7 +609,7 @@ export default function MedicalDeviceIdeaPlanner() {
                     value={answers.deviceDescription}
                     onChange={(e) => setAnswers({ ...answers, deviceDescription: e.target.value.slice(0, 2000) })}
                     className="w-full h-48 px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-[#ff6600] transition-colors resize-none"
-                    placeholder="Describe your medical device idea in detail..."
+                    placeholder="I want to create a device that..."
                   />
 
                   <div className="flex justify-between items-center mt-2 mb-4">
@@ -921,6 +855,48 @@ export default function MedicalDeviceIdeaPlanner() {
                     Download Your Plan (PDF)
                   </button>
                 </div>
+              </div>
+
+              {/* Optional Email Section */}
+              <div className="bg-white rounded-2xl p-8 shadow-lg mt-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-2">
+                  Want a copy sent to your email?
+                </h2>
+                <p className="text-gray-600 mb-6">
+                  Enter your email below and we&apos;ll send you a copy of your development plan.
+                </p>
+
+                {emailSent ? (
+                  <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-xl">
+                    <svg className="w-5 h-5 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-green-700">Your plan has been sent to {answers.email}</span>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSendEmail} className="flex flex-col sm:flex-row gap-3">
+                    <input
+                      type="email"
+                      value={answers.email}
+                      onChange={(e) => setAnswers({ ...answers, email: e.target.value })}
+                      className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-[#ff6600] transition-colors"
+                      placeholder="you@example.com"
+                      pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$"
+                      title="Please enter a valid email address"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!answers.email || sendingEmail}
+                      className="px-6 py-3 bg-[#ff6600] hover:bg-[#d95000] disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all whitespace-nowrap"
+                    >
+                      {sendingEmail ? 'Sending...' : 'Send to Email'}
+                    </button>
+                  </form>
+                )}
+
+                <p className="mt-4 text-xs text-gray-500">
+                  Your email is used solely to deliver your development plan. We respect your privacy and will not share your information.
+                </p>
               </div>
             </div>
           )}
